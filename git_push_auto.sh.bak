@@ -3,7 +3,7 @@
 # AUTORIA: Paulo Hernani | Assistência: Gemini
 # FLUXO: Menu -> Configura -> Autentica -> Limpa -> Sincroniza/Commit Base -> Commit -> Push
 
-VERSION="55" # Atualizado para V55 com correção de pull em repositórios vazios e integração com GH CLI
+VERSION="53"
 
 NC='\033[0m'       
 RED='\033[0;31m'   
@@ -25,7 +25,7 @@ GIT_PASSWORD_STORE=""
 
 function check_dependencies() {
     local missing_deps=()
-    local deps=("git" "curl" "cmp" "gh") # Adicionado GH CLI
+    local deps=("git" "curl" "cmp") 
 
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" &> /dev/null; then 
@@ -39,11 +39,9 @@ function check_dependencies() {
         echo -e "${CYAN}   - Git: pkg install git${NC}"
         echo -e "${CYAN}   - Curl: pkg install curl${NC}"
         echo -e "${CYAN}   - Coreutils (para cmp): pkg install coreutils${NC}"
-        echo -e "${CYAN}   - GH CLI: pkg install gh (ou consulte o site do GitHub para outras distros)${NC}"
         exit 1
     fi
 }
-# ... (Funções check_for_update, perform_git_cleanup e main_menu permanecem as mesmas) ...
 
 function check_for_update() {
     local REMOTE_FILE
@@ -170,23 +168,6 @@ else
     main_menu
 fi
 
-# NOVO: Seleção da Branch Principal
-echo -e "\n${CYAN}⚙️ SELEÇÃO DA BRANCH PRINCIPAL:${NC}"
-echo -e "1) ${GREEN}main${NC} (Padrão moderno do GitHub)"
-echo -e "2) ${YELLOW}master${NC} (Padrão anterior)"
-read -r -p "$(echo -e "${YELLOW}Escolha a opção (1 ou 2) [1]: ${NC}")" BRANCH_CHOICE
-BRANCH_CHOICE=${BRANCH_CHOICE:-1}
-
-if [ "$BRANCH_CHOICE" == "2" ]; then
-    BRANCH_NAME="master"
-else
-    BRANCH_NAME="main"
-fi
-echo -e "${GREEN}✅ Branch principal definida como: ${CYAN}$BRANCH_NAME${NC}"
-echo -e "${YELLOW}----------------------------------------------------------${NC}"
-sleep 1
-
-
 echo -e "\n${YELLOW}=========================================================="
 echo -e "           INÍCIO DO ENVIO SIMPLIFICADO AO GITHUB (V${VERSION})           "
 echo -e "${YELLOW}=========================================================="
@@ -208,7 +189,7 @@ else
     echo -e "${GREEN}✅ Repositório Git (.git) já inicializado.${NC}"
 fi
 
-echo -e "${BLUE}⚙️ Definindo branch local como '$BRANCH_NAME'...${NC}"
+echo -e "${BLUE}⚙️ Definindo branch principal como '$BRANCH_NAME'...${NC}"
 git branch -M $BRANCH_NAME 2>/dev/null
 
 if [ $? -ne 0 ]; then
@@ -227,99 +208,81 @@ echo -e "${GREEN}✅ Branch principal definida.${NC}"
 echo -e "${YELLOW}----------------------------------------------------------${NC}"
 sleep 2
 
-# 1. CONFIGURAR REMOTO (URL) / CRIAR REPOSITÓRIO (Usando GH CLI)
+# 1. CONFIGURAR REMOTO (URL) - MODIFICADO/CORRIGIDO
 # ----------------------------------------------------------
 REMOTE_URL=$(git remote get-url origin 2>/dev/null)
 
+# Se já existe um remoto, pergunta se deseja trocá-lo
 if [ -n "$REMOTE_URL" ]; then
-    # Repositório já existe (lógica de mudança/manutenção)
     echo -e "${GREEN}✅ Repositório remoto ATUAL: ${CYAN}$REMOTE_URL${NC}"
     read -r -p "$(echo -e "${YELLOW}Deseja ALTERAR/TROCAR este repositório? (s/N) [N]: ${NC}")" CHANGE_REPO
     
     if [[ "$CHANGE_REPO" =~ ^[Ss]$ ]]; then
         echo -e "${BLUE}⚙️ Removendo configuração do repositório antigo...${NC}"
         git remote remove origin
-        REMOTE_URL="" # Limpa a variável para forçar a configuração/criação abaixo
+        REMOTE_URL="" # Limpa a variável para forçar a configuração abaixo
     else
         echo -e "${GREEN}✅ Mantendo repositório atual.${NC}"
     fi
 fi
 
-# Se não tem remoto, inicia o fluxo de criação via GH CLI
+# Se não tem remoto (ou se foi removido acima), pede a nova URL
 if [ -z "$REMOTE_URL" ]; then
-    echo -e "${CYAN}📌 PASSO 1/4: CRIAÇÃO/CONFIGURAÇÃO DO REPOSITÓRIO (GH CLI)${NC}"
-    
-    # 1. Tenta pegar o nome de usuário (necessário para o PULL_URL)
-    GIT_USERNAME_STORE=$(gh api user -q .login 2>/dev/null)
-    if [ -z "$GIT_USERNAME_STORE" ]; then
-        echo -e "${RED}❌ ERRO FATAL: Falha ao obter o nome de usuário do GH CLI.${NC}"
-        echo -e "${YELLOW}🚨 Execute 'gh auth login' e tente novamente.${NC}"
-        exit 1
-    fi
-    
-    # 2. Pergunta se é para criar um novo ou adicionar URL
+    echo -e "${CYAN}📌 PASSO 1/4: CONFIGURAÇÃO DO REPOSITÓRIO REMOTO${NC}"
     while true; do
-        echo -e "1) ${GREEN}CRIAR NOVO repositório no GitHub (Recomendado)${NC}"
-        echo -e "2) ${YELLOW}ADICIONAR URL de um repositório existente${NC}"
-        read -r -p "$(echo -e "${YELLOW}Opção (1 ou 2) [1]: ${NC}")" REMOTE_ACTION
-        REMOTE_ACTION=${REMOTE_ACTION:-1}
-
-        if [ "$REMOTE_ACTION" == "1" ]; then
-            read -r -p "$(echo -e "${CYAN}✍️ Digite o NOME do novo repositório (ex: meu-projeto-novo): ${NC}")" REPO_NAME
-            
-            # Comando mágico: Cria o repositório, define o remoto e o PUSH
-            echo -e "${BLUE}⚙️ Executando 'gh repo create ${GIT_USERNAME_STORE}/${REPO_NAME} --source=. --remote=origin --public'...${NC}"
-            if gh repo create "${GIT_USERNAME_STORE}/${REPO_NAME}" --source=. --remote=origin --public --description "Auto-created by git_push_auto.sh V${VERSION}"; then
-                echo -e "${GREEN}✅ Repositório criado e conectado com sucesso!${NC}"
-                REMOTE_URL="https://github.com/${GIT_USERNAME_STORE}/${REPO_NAME}.git"
-                break
-            else
-                echo -e "${RED}❌ ERRO: Falha na criação do repositório (Pode ser nome já existente ou erro de permissão).${NC}"
-                echo -e "${YELLOW}Tente novamente ou escolha a opção 2.${NC}"
-            fi
+        read -r -p "$(echo -e "${CYAN}🔗 COLE A URL HTTPS DO SEU REPOSITÓRIO NO GITHUB AQUI: ${NC}")" NEW_REPO_URL
         
-        elif [ "$REMOTE_ACTION" == "2" ]; then
-            while true; do
-                read -r -p "$(echo -e "${CYAN}🔗 COLE A URL HTTPS DO REPOSITÓRIO EXISTENTE: ${NC}")" NEW_REPO_URL
-                NEW_REPO_URL=$(echo "$NEW_REPO_URL" | xargs)
-                if [[ "$NEW_REPO_URL" =~ ^https://github.com/.*\.git$ ]]; then 
-                    REMOTE_URL=$NEW_REPO_URL
-                    git remote add origin "$REMOTE_URL"
-                    echo -e "${GREEN}✅ Repositório conectado!${NC}"
-                    break 2 # Sai dos dois loops (interno e externo)
-                fi
-                echo -e "${RED}🚨 URL inválida. O link deve ser HTTPS e terminar em .git.${NC}"
-            done
+        # Remove espaços em branco acidentais
+        NEW_REPO_URL=$(echo "$NEW_REPO_URL" | xargs)
 
-        else
-            echo -e "${RED}❌ Opção inválida.${NC}"
+        if [[ "$NEW_REPO_URL" =~ ^https://github.com/.*\.git$ ]]; then 
+            REMOTE_URL=$NEW_REPO_URL
+            git remote add origin "$REMOTE_URL"
+            echo -e "${GREEN}✅ Novo repositório conectado!${NC}"
+            break
         fi
+        echo -e "${RED}🚨 URL inválida. O link deve ser HTTPS e terminar em .git.${NC}"
     done
+else
+    # Apenas reforça a mensagem caso tenha mantido o antigo
+    echo -e "${GREEN}✅ Conectado a: ${CYAN}$REMOTE_URL${NC}"
 fi
 
-# 2. OBTENÇÃO DE CREDENCIAIS (Para PULL e PUSH) - SIMPLIFICADO PELA INTEGRAÇÃO GH CLI
+# 2. OBTENÇÃO DE CREDENCIAIS (Para PULL e PUSH)
 # ----------------------------------------------------------
-# Com a integração GH CLI, não é mais necessário pedir o PAT manualmente
-echo -e "\n${CYAN}📌 PASSO 2/4: AUTENTICAÇÃO (GH CLI)${NC}"
-echo -e "${GREEN}✅ O GH CLI está autenticado. Não é necessário digitar o token novamente.${NC}"
+while true; do
+    echo -e "\n${CYAN}📌 PASSO 2/4: AUTENTICAÇÃO (TOKEN PAT)${NC}"
+    echo -e "Use um Personal Access Token (PAT):"
+    echo -e "1 - Digitar credenciais."
+    echo -e "2 - ${CYAN}AJUDA: Como obter meu PAT?${NC}"
+    read -r -p "$(echo -e "${YELLOW}Escolha a opção (1 ou 2): ${NC}")" AUTH_CHOICE
+    
+    if [ "$AUTH_CHOICE" == "1" ]; then
+        echo -e "${RED}\n⚠️ ATENÇÃO: O token será visível!${NC}"
+        read -r -p "$(echo -e "${YELLOW}👤 Nome de Usuário: ${NC}")" GIT_USERNAME
+        read -r -p "$(echo -e "${YELLOW}🔑 Personal Access Token (PAT): ${NC}")" GIT_PASSWORD
+        GIT_USERNAME_STORE="$GIT_USERNAME"; GIT_PASSWORD_STORE="$GIT_PASSWORD"
+        break
+    elif [ "$AUTH_CHOICE" == "2" ]; then
+        echo -e "\n${CYAN}🔗 GUIA: [Criar um PAT](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token)${NC}"
+        read -p "$(echo -e "${YELLOW}Pressione [Enter] para retornar...${NC}")"
+    fi
+done
 
-# A URL para PULL/PUSH que usa a autenticação segura do GH CLI (via git) é simplesmente o REMOTE_URL
-PULL_URL="$REMOTE_URL" # O GH CLI se encarrega da autenticação no push/pull
+PULL_URL="https://${GIT_USERNAME_STORE}:${GIT_PASSWORD_STORE}@${REMOTE_URL#https://}"
 
 echo -e "${YELLOW}----------------------------------------------------------${NC}"
 sleep 1
 
 # 2.5. LIMPEZA PROATIVA 
 # ----------------------------------------------------------
-# ... (Resto do script permanece inalterado) ...
-
 echo -e "${CYAN}📌 PASSO 2.5/4: LIMPEZA PROATIVA DO REPOSITÓRIO LOCAL${NC}"
 perform_git_cleanup
 echo -e "${YELLOW}----------------------------------------------------------${NC}"
 sleep 1
 
 
-# 3. SINCRONIZAÇÃO PROATIVA (git pull --rebase) - CORRIGIDO PARA REPOSITÓRIOS VAZIOS
+# 3. SINCRONIZAÇÃO PROATIVA (git pull --rebase)
 # ----------------------------------------------------------
 echo -e "${CYAN}📌 PASSO 3/4: SINCRONIZAÇÃO PROATIVA (git pull --rebase)${NC}"
 read -p "$(echo -e "${BLUE}✅ Pressione [Enter] para sincronizar e trazer mudanças remotas...${NC}")"
@@ -349,42 +312,27 @@ else
     fi
 fi
 
-# NOVO CHECK: Verifica se a branch principal existe no remoto antes de tentar o pull
-if git ls-remote --heads "$PULL_URL" "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
+echo -e "${BLUE}⚙️ Executando 'git pull --rebase $PULL_URL $BRANCH_NAME' para sincronizar...${NC}"
+
+if git pull --rebase "$PULL_URL" "$BRANCH_NAME"; then
+    echo -e "${GREEN}✅ Sincronização Proativa concluída. Histórico alinhado.${NC}"
     
-    echo -e "${BLUE}⚙️ Executando 'git pull --rebase origin $BRANCH_NAME' para sincronizar...${NC}"
-
-    if git pull --rebase origin "$BRANCH_NAME"; then
-        echo -e "${GREEN}✅ Sincronização Proativa concluída. Histórico alinhado.${NC}"
-        
-        if [ $STASH_NEEDED -eq 1 ]; then
-            echo -e "${BLUE}⚙️ Restaurando alterações locais (Stash Pop)...${NC}"
-            if ! git stash pop --index; then
-                echo -e "${RED}❌ ERRO ao restaurar alterações (Stash Pop)! O Git encontrou um CONFLITO no local.${NC}"
-                echo -e "${CYAN}   🚨 Ação Manual NECESSÁRIA: Você precisa resolver o conflito (removendo <<<, ===, >>>).${NC}"
-                echo -e "${CYAN}   1. Edite os arquivos em conflito. 2. Use 'git add .' 3. Use 'git stash drop' para finalizar.${NC}"
-                exit 1
-            fi
-            echo -e "${GREEN}✅ Alterações locais restauradas. Estão prontas para o próximo commit.${NC}"
+    if [ $STASH_NEEDED -eq 1 ]; then
+        echo -e "${BLUE}⚙️ Restaurando alterações locais (Stash Pop)...${NC}"
+        if ! git stash pop --index; then
+            echo -e "${RED}❌ ERRO ao restaurar alterações (Stash Pop)! O Git encontrou um CONFLITO no local.${NC}"
+            echo -e "${CYAN}   🚨 Ação Manual NECESSÁRIA: Você precisa resolver o conflito (removendo <<<, ===, >>>).${NC}"
+            echo -e "${CYAN}   1. Edite os arquivos em conflito. 2. Use 'git add .' 3. Use 'git stash drop' para finalizar.${NC}"
+            exit 1
         fi
-
-    else
-        echo -e "${RED}❌ ERRO FATAL no Pull/Rebase! O Git parou devido a CONFLITOS de histórico.${NC}"
-        echo -e "${CYAN}   🚨 Ação Manual NECESSÁRIA: Você deve resolver o conflito!${NC}"
-        echo -e "${CYAN}   1. Edite arquivos. 2. 'git add .' 3. 'git rebase --continue'.${NC}"
-        exit 1
+        echo -e "${GREEN}✅ Alterações locais restauradas. Estão prontas para o próximo commit.${NC}"
     fi
 
 else
-    echo -e "${YELLOW}⚠️ ALERTA: Branch remota ('$BRANCH_NAME') não encontrada no servidor.${NC}"
-    echo -e "${CYAN}🚀 Assumindo que este é o PRIMEIRO ENVIO. Pulando o PULL e prosseguindo para o COMMIT/PUSH inicial...${NC}"
-    
-    # Restaura o stash de qualquer forma para que as alterações sejam commitadas
-    if [ $STASH_NEEDED -eq 1 ]; then
-        echo -e "${BLUE}⚙️ Restaurando alterações locais (Stash Pop)...${NC}"
-        git stash pop --index 2>/dev/null
-        echo -e "${GREEN}✅ Alterações locais restauradas para o commit inicial.${NC}"
-    fi
+    echo -e "${RED}❌ ERRO FATAL no Pull/Rebase! O Git parou devido a CONFLITOS de histórico.${NC}"
+    echo -e "${CYAN}   🚨 Ação Manual NECESSÁRIA: Você deve resolver o conflito!${NC}"
+    echo -e "${CYAN}   1. Edite arquivos. 2. 'git add .' 3. 'git rebase --continue'.${NC}"
+    exit 1
 fi
 
 echo -e "${YELLOW}----------------------------------------------------------${NC}"
@@ -497,8 +445,7 @@ sleep 1
 # 6. ENVIAR PARA O GITHUB (Push)
 # ----------------------------------------------------------
 while true; do
-    # O comando git push usará a URL 'origin' que foi configurada/criada no PASSO 1, e o GH CLI cuidará da autenticação.
-    PUSH_COMMAND="git push -u origin $BRANCH_NAME" 
+    PUSH_COMMAND="git push -u $PULL_URL $BRANCH_NAME" 
 
     read -p "$(echo -e "${GREEN}✅ Pressione [Enter] para executar o PUSH...${NC}")"
     echo -e "${BLUE}📡 Iniciando o envio. Aguarde o resultado...${NC}"
@@ -516,10 +463,11 @@ while true; do
         echo -e "${CYAN}Saída Completa do Git (Diagnóstico):\n${PUSH_OUTPUT}${NC}"
         echo -e "${YELLOW}----------------------------------------------------------${NC}"
 
-        if echo "$PUSH_OUTPUT" | grep -q "fatal: Authentication failed"; then
+        if echo "$PUSH_OUTPUT" | grep -q "fatal: Authentication failed" || echo "$PUSH_OUTPUT" | grep -q "Invalid username or token"; then
             echo -e "${RED}❌ FALHA NO PUSH: ERRO DE AUTENTICAÇÃO.${NC}"
-            echo -e "${YELLOW}🚨 Tente rodar 'gh auth login --renew' no terminal e tente novamente.${NC}"
-            exit 1
+            GIT_USERNAME_STORE=""; GIT_PASSWORD_STORE=""
+            read -r -p "$(echo -e "${YELLOW}Deseja TENTAR NOVAMENTE as credenciais? (S/n) [S]: ${NC}")" RETRY_AUTH
+            if [[ ${RETRY_AUTH:-S} =~ ^[Ss]$ ]]; then continue; else exit 1; fi
         
         elif echo "$PUSH_OUTPUT" | grep -q "remote unpack failed" || echo "$PUSH_OUTPUT" | grep -q "did not receive expected object"; then
              echo -e "${RED}❌ FALHA NO PUSH: ERRO DE OBJETO / DESEMPACOTAMENTO.${NC}"
