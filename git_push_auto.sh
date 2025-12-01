@@ -3,7 +3,7 @@
 # AUTORIA: Paulo Hernani | Assistência: Gemini
 # FLUXO: Menu -> Configura -> Autentica -> Limpa -> Sincroniza/Commit Base -> Commit -> Push
 
-VERSION="55" # Atualizado para V55 com correção de pull em repositórios vazios e integração com GH CLI
+VERSION="56" # V56: Adicionada opção de Logout seguro do GH CLI no final do script.
 
 NC='\033[0m'       
 RED='\033[0;31m'   
@@ -43,7 +43,6 @@ function check_dependencies() {
         exit 1
     fi
 }
-# ... (Funções check_for_update, perform_git_cleanup e main_menu permanecem as mesmas) ...
 
 function check_for_update() {
     local REMOTE_FILE
@@ -149,6 +148,7 @@ function main_menu() {
                 ;; 
             3)
                 echo -e "${RED}❌ Operação cancelada pelo usuário.${NC}"
+                # A função 'goodbye_and_logout' será chamada no final. Se sair aqui, não precisa do logout, mas o exit interrompe o fluxo.
                 exit 0
                 ;;
             *)
@@ -157,6 +157,37 @@ function main_menu() {
         esac
     done
     echo -e "${YELLOW}----------------------------------------------------------${NC}"
+}
+
+function goodbye_and_logout() {
+    echo -e "\n${YELLOW}=========================================================="
+    echo -e "          FIM DO PROCESSO GIT INTERATIVO (V${VERSION})          "
+    echo -e "=========================================================="
+    echo -e "${GREEN}✅ AUTOR: Paulo Hernani${NC}"
+    echo -e "${GREEN}🤝 ASSISTÊNCIA NO SCRIPT: Gemini${NC}"
+    echo -e "${CYAN}📷 Siga no Instagram: @eu_paulo_ti${NC}"
+    echo -e "${YELLOW}----------------------------------------------------------${NC}"
+
+    # ==========================================================
+    # DESLOGAR DO GH CLI (OPCIONAL)
+    # ==========================================================
+    echo -e "\n${CYAN}🚨 SAÍDA SEGURA DO GH CLI${NC}"
+    read -r -p "$(echo -e "${YELLOW}Deseja deslogar do GitHub CLI ('gh auth logout') AGORA? (s/N) [N]: ${NC}")" LOGOUT_CHOICE
+    LOGOUT_CHOICE=${LOGOUT_CHOICE:-N}
+
+    if [[ "$LOGOUT_CHOICE" =~ ^[Ss]$ ]]; then
+        echo -e "${BLUE}⚙️ Deslogando do GitHub CLI...${NC}"
+        if gh auth logout; then
+            echo -e "${GREEN}✅ Deslogado com sucesso! Suas credenciais foram removidas do sistema.${NC}"
+        else
+            echo -e "${RED}❌ ERRO ao deslogar. Tente rodar 'gh auth logout' manualmente.${NC}"
+        fi
+    else
+        echo -e "${GREEN}✅ Credenciais mantidas para o próximo uso.${NC}"
+    fi
+
+    echo -e "${YELLOW}==========================================================${NC}"
+    exit 0
 }
 
 # ==========================================================
@@ -198,11 +229,11 @@ sleep 2
 # ----------------------------------------------------------
 echo -e "\n${YELLOW}🚨 Você deve estar DENTRO da pasta raiz do seu projeto. Diretório: ${CYAN}$(pwd)${NC}"
 read -r -p "$(echo -e "${YELLOW}CONFIRMA que está na pasta do projeto? (S/n): ${NC}")" CONFIRMATION
-if [[ ! "$CONFIRMATION" =~ ^[Ss]$ && ! -z "$CONFIRMATION" ]]; then echo -e "${RED}❌ Operação cancelada.${NC}"; exit 1; fi
+if [[ ! "$CONFIRMATION" =~ ^[Ss]$ && ! -z "$CONFIRMATION" ]]; then echo -e "${RED}❌ Operação cancelada.${NC}"; goodbye_and_logout; fi
 
 if [ ! -d ".git" ]; then
     echo -e "${BLUE}⚙️ Inicializando Git (git init)...${NC}"
-    git init || { echo -e "${RED}❌ ERRO NA INICIALIZAÇÃO.${NC}"; exit 1; }
+    git init || { echo -e "${RED}❌ ERRO NA INICIALIZAÇÃO.${NC}"; goodbye_and_logout; }
     echo -e "${GREEN}✅ Repositório Git inicializado.${NC}"
 else
     echo -e "${GREEN}✅ Repositório Git (.git) já inicializado.${NC}"
@@ -217,10 +248,10 @@ if [ $? -ne 0 ]; then
         echo -e "${RED}\n❌ ERRO DETECTADO: Dubious ownership.${NC}"
         echo -e "${BLUE}   APLICANDO SOLUÇÃO: Adicionando diretório à lista de segurança...${NC}"
         git config --global --add safe.directory "$CURRENT_DIR"
-        git branch -M $BRANCH_NAME || { echo -e "${RED}❌ ERRO FATAL: Falha ao definir a branch.${NC}"; exit 1; }
+        git branch -M $BRANCH_NAME || { echo -e "${RED}❌ ERRO FATAL: Falha ao definir a branch.${NC}"; goodbye_and_logout; }
         echo -e "${GREEN}✅ Branch definida após correção de propriedade.${NC}"
     else
-        echo -e "${RED}❌ ERRO FATAL ao definir a branch principal.${NC}"; exit 1
+        echo -e "${RED}❌ ERRO FATAL ao definir a branch principal.${NC}"; goodbye_and_logout
     fi
 fi
 echo -e "${GREEN}✅ Branch principal definida.${NC}"
@@ -254,7 +285,7 @@ if [ -z "$REMOTE_URL" ]; then
     if [ -z "$GIT_USERNAME_STORE" ]; then
         echo -e "${RED}❌ ERRO FATAL: Falha ao obter o nome de usuário do GH CLI.${NC}"
         echo -e "${YELLOW}🚨 Execute 'gh auth login' e tente novamente.${NC}"
-        exit 1
+        goodbye_and_logout
     fi
     
     # 2. Pergunta se é para criar um novo ou adicionar URL
@@ -299,20 +330,16 @@ fi
 
 # 2. OBTENÇÃO DE CREDENCIAIS (Para PULL e PUSH) - SIMPLIFICADO PELA INTEGRAÇÃO GH CLI
 # ----------------------------------------------------------
-# Com a integração GH CLI, não é mais necessário pedir o PAT manualmente
 echo -e "\n${CYAN}📌 PASSO 2/4: AUTENTICAÇÃO (GH CLI)${NC}"
 echo -e "${GREEN}✅ O GH CLI está autenticado. Não é necessário digitar o token novamente.${NC}"
 
-# A URL para PULL/PUSH que usa a autenticação segura do GH CLI (via git) é simplesmente o REMOTE_URL
-PULL_URL="$REMOTE_URL" # O GH CLI se encarrega da autenticação no push/pull
+PULL_URL="$REMOTE_URL" 
 
 echo -e "${YELLOW}----------------------------------------------------------${NC}"
 sleep 1
 
 # 2.5. LIMPEZA PROATIVA 
 # ----------------------------------------------------------
-# ... (Resto do script permanece inalterado) ...
-
 echo -e "${CYAN}📌 PASSO 2.5/4: LIMPEZA PROATIVA DO REPOSITÓRIO LOCAL${NC}"
 perform_git_cleanup
 echo -e "${YELLOW}----------------------------------------------------------${NC}"
@@ -350,7 +377,7 @@ else
 fi
 
 # NOVO CHECK: Verifica se a branch principal existe no remoto antes de tentar o pull
-if git ls-remote --heads "$PULL_URL" "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
+if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
     
     echo -e "${BLUE}⚙️ Executando 'git pull --rebase origin $BRANCH_NAME' para sincronizar...${NC}"
 
@@ -363,7 +390,7 @@ if git ls-remote --heads "$PULL_URL" "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; th
                 echo -e "${RED}❌ ERRO ao restaurar alterações (Stash Pop)! O Git encontrou um CONFLITO no local.${NC}"
                 echo -e "${CYAN}   🚨 Ação Manual NECESSÁRIA: Você precisa resolver o conflito (removendo <<<, ===, >>>).${NC}"
                 echo -e "${CYAN}   1. Edite os arquivos em conflito. 2. Use 'git add .' 3. Use 'git stash drop' para finalizar.${NC}"
-                exit 1
+                goodbye_and_logout
             fi
             echo -e "${GREEN}✅ Alterações locais restauradas. Estão prontas para o próximo commit.${NC}"
         fi
@@ -372,7 +399,7 @@ if git ls-remote --heads "$PULL_URL" "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; th
         echo -e "${RED}❌ ERRO FATAL no Pull/Rebase! O Git parou devido a CONFLITOS de histórico.${NC}"
         echo -e "${CYAN}   🚨 Ação Manual NECESSÁRIA: Você deve resolver o conflito!${NC}"
         echo -e "${CYAN}   1. Edite arquivos. 2. 'git add .' 3. 'git rebase --continue'.${NC}"
-        exit 1
+        goodbye_and_logout
     fi
 
 else
@@ -411,7 +438,7 @@ if [ -n "$SENSITIVE_FILES" ]; then
 
         if [ "$SECURITY_ACTION_CHOICE" == "1" ]; then
             echo -e "${RED}❌ Operação INTERROMPIDA. Adicione os arquivos ao .gitignore ou exclua-os manualmente.${NC}"
-            exit 1
+            goodbye_and_logout
 
         elif [ "$SECURITY_ACTION_CHOICE" == "2" ]; then
             echo -e "${BLUE}⚙️ Adicionando arquivos sensíveis ao .gitignore e removendo do rastreamento...${NC}"
@@ -486,7 +513,7 @@ if git status --porcelain | grep -q '^\(M\|A\|D\|R\|C\|U\|\?\?\)' ; then
     done
 
     echo -e "${BLUE}⚙️ Executando commit: ${CYAN}${COMMIT_MESSAGE}${NC}"
-    git commit -m "$COMMIT_MESSAGE" || { echo -e "${RED}❌ Erro ao criar o commit.${NC}"; exit 1; }
+    git commit -m "$COMMIT_MESSAGE" || { echo -e "${RED}❌ Erro ao criar o commit.${NC}"; goodbye_and_logout; }
     echo -e "${GREEN}✅ Commit criado com sucesso.${NC}"
 else
     echo -e "${YELLOW}⚠️ Não há alterações para commitar. Prosseguindo para o PUSH...${NC}"
@@ -497,7 +524,6 @@ sleep 1
 # 6. ENVIAR PARA O GITHUB (Push)
 # ----------------------------------------------------------
 while true; do
-    # O comando git push usará a URL 'origin' que foi configurada/criada no PASSO 1, e o GH CLI cuidará da autenticação.
     PUSH_COMMAND="git push -u origin $BRANCH_NAME" 
 
     read -p "$(echo -e "${GREEN}✅ Pressione [Enter] para executar o PUSH...${NC}")"
@@ -519,7 +545,7 @@ while true; do
         if echo "$PUSH_OUTPUT" | grep -q "fatal: Authentication failed"; then
             echo -e "${RED}❌ FALHA NO PUSH: ERRO DE AUTENTICAÇÃO.${NC}"
             echo -e "${YELLOW}🚨 Tente rodar 'gh auth login --renew' no terminal e tente novamente.${NC}"
-            exit 1
+            goodbye_and_logout
         
         elif echo "$PUSH_OUTPUT" | grep -q "remote unpack failed" || echo "$PUSH_OUTPUT" | grep -q "did not receive expected object"; then
              echo -e "${RED}❌ FALHA NO PUSH: ERRO DE OBJETO / DESEMPACOTAMENTO.${NC}"
@@ -536,32 +562,24 @@ while true; do
                 if [ "$OBJECT_ERROR_CHOICE" == "1" ]; then git gc --prune=now && echo -e "${GREEN}✅ Limpeza concluída.${NC}" && break; fi
                 if [ "$OBJECT_ERROR_CHOICE" == "2" ]; then rm -rf .git/objects/pack/* && git repack -a -d && echo -e "${GREEN}✅ Recriação concluída.${NC}" && break; fi
                 if [ "$OBJECT_ERROR_CHOICE" == "3" ]; then break; fi
-                if [ "$OBJECT_ERROR_CHOICE" == "4" ]; then exit 1; fi
+                if [ "$OBJECT_ERROR_CHOICE" == "4" ]; then goodbye_and_logout; fi
                 echo -e "${RED}❌ Opção inválida.${NC}"
             done
             
         elif echo "$PUSH_OUTPUT" | grep -q "GH013: Repository rule violations found"; then
             echo -e "${RED}❌ FALHA NO PUSH: REJEITADO POR CONTER SEGREDO (GH013).${NC}"
             echo -e "${YELLOW}O GitHub detectou uma Chave de API em seu histórico. Remova, autorize ou use git filter-repo.${NC}"
-            exit 1
+            goodbye_and_logout
 
         else
             echo -e "${RED}❌ FALHA NO PUSH! Erro genérico.${NC}"
             read -r -p "$(echo -e "${YELLOW}Deseja TENTAR NOVAMENTE? (S/n) [S]: ${NC}")" RETRY_GENERIC
-            if [[ ${RETRY_GENERIC:-S} =~ ^[Ss]$ ]]; then continue; else exit 1; fi
+            if [[ ${RETRY_GENERIC:-S} =~ ^[Ss]$ ]]; then continue; else goodbye_and_logout; fi
         fi
     fi
 done
 
 # ==========================================================
-# CRÉDITOS FINAIS
+# CRÉDITOS FINAIS E LOGOUT
 # ==========================================================
-echo -e "\n${YELLOW}=========================================================="
-echo -e "          FIM DO PROCESSO GIT INTERATIVO (V${VERSION})          "
-echo -e "=========================================================="
-echo -e "${GREEN}✅ AUTOR: Paulo Hernani${NC}"
-echo -e "${GREEN}🤝 ASSISTÊNCIA NO SCRIPT: Gemini${NC}"
-echo -e "${CYAN}📷 Siga no Instagram: @eu_paulo_ti${NC}"
-echo -e "${YELLOW}==========================================================${NC}"
-
-exit 0
+goodbye_and_logout
